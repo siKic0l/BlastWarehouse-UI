@@ -40,6 +40,12 @@ interface Barang {
   satuan: string;
 }
 
+interface SplitRow {
+  id: number;
+  jumlah: number;
+  kondisi: KondisiType;
+}
+
 // Dummy Data
 const dummyBarang: Barang[] = [
   { id: "1", kode: "ELK-001", nama: "Precision Laptop X1", kategori: "Elektronik", stok: 10, satuan: "Unit" },
@@ -233,14 +239,39 @@ function ModalDetail({ trx, onClose }: { trx: Transaksi; onClose: () => void }) 
 function ModalKembali({ trx, onClose, onConfirm }: {
   trx: Transaksi;
   onClose: () => void;
-  onConfirm: (items: { barangId: string; kondisi: KondisiType }[]) => void;
+  onConfirm: (items: { barangId: string; kondisi: KondisiType; jumlah: number }[]) => void;
 }) {
   const dipinjam = trx.items.filter(i => i.status === "Dipinjam");
-  const [kondisiMap, setKondisiMap] = useState<Record<string, KondisiType>>(
-    Object.fromEntries(dipinjam.map(i => [i.barangId, "Baik"]))
+  const [splitMap, setSplitMap] = useState<Record<string, SplitRow[]>>(() =>
+    Object.fromEntries(dipinjam.map(i => [i.barangId, [{ id: 1, jumlah: i.jumlah, kondisi: "Baik" }]]))
   );
 
   const kondisiOptions: KondisiType[] = ["Baik", "Rusak Ringan", "Rusak Berat", "Hilang"];
+
+  const getSisa = (barangId: string, total: number) =>
+    total - (splitMap[barangId]?.reduce((s, r) => s + r.jumlah, 0) ?? 0);
+
+  const allValid = dipinjam.every(item => getSisa(item.barangId, item.jumlah) === 0);
+
+  const addRow = (barangId: string) => {
+    setSplitMap(prev => {
+      const rows = prev[barangId];
+      const maxId = Math.max(...rows.map(r => r.id));
+      return { ...prev, [barangId]: [...rows, { id: maxId + 1, jumlah: 1, kondisi: "Baik" }] };
+    });
+  };
+
+  const removeRow = (barangId: string, id: number) =>
+    setSplitMap(prev => ({ ...prev, [barangId]: prev[barangId].filter(r => r.id !== id) }));
+
+  const updateRow = (barangId: string, id: number, patch: Partial<SplitRow>, maxJumlah: number) =>
+    setSplitMap(prev => {
+      const rows = prev[barangId].map(r => r.id === id ? { ...r, ...patch } : r);
+      const total = rows.reduce((s, r) => s + r.jumlah, 0);
+      // jangan melebihi total jumlah item
+      if (total > maxJumlah) return prev;
+      return { ...prev, [barangId]: rows };
+    });
 
   const getKondisiStyle = (k: KondisiType) => {
     if (k === "Baik") return { bg: "#f0fdf4", color: "#22c55e" };
@@ -249,14 +280,26 @@ function ModalKembali({ trx, onClose, onConfirm }: {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
-      <div style={{ background: "white", borderRadius: "20px", width: "100%", maxWidth: "520px", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.15)" }}>
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid #f5f5f5", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+      <div style={{ background: "white", borderRadius: "20px", width: "100%", maxWidth: "560px",
+        maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.15)" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid #f5f5f5",
+          display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a1a1a", margin: 0 }}>Proses Pengembalian</h3>
-            <p style={{ fontSize: "12px", color: "#aaa", margin: "2px 0 0" }}>Tentukan kondisi setiap barang yang dikembalikan</p>
+            <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a1a1a", margin: 0 }}>
+              Proses Pengembalian
+            </h3>
+            <p style={{ fontSize: "12px", color: "#aaa", margin: "2px 0 0" }}>
+              Bisa dibagi jika satu item punya kondisi berbeda
+            </p>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#aaa" }}><X size={20} /></button>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#aaa" }}>
+            <X size={20} />
+          </button>
         </div>
 
         <div style={{ padding: "24px", overflowY: "auto", flex: 1 }}>
@@ -267,41 +310,104 @@ function ModalKembali({ trx, onClose, onConfirm }: {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {dipinjam.map((item) => {
-              const kondisi = kondisiMap[item.barangId];
-              const style = getKondisiStyle(kondisi);
+            {dipinjam.map(item => {
+              const rows = splitMap[item.barangId] ?? [];
+              const sisa = getSisa(item.barangId, item.jumlah);
+
               return (
-                <div key={item.barangId} style={{ border: "1.5px solid #f0f0f0", borderRadius: "12px", padding: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+                <div key={item.barangId} style={{ border: "1.5px solid #f0f0f0", borderRadius: "12px", overflow: "hidden" }}>
+                  {/* Item header */}
+                  <div style={{ padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <p style={{ fontSize: "14px", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>{item.namaBarang}</p>
-                      <p style={{ fontSize: "12px", color: "#aaa", margin: "2px 0 0" }}>Jumlah: {item.jumlah} {item.satuan}</p>
+                      <p style={{ fontSize: "11px", color: "#aaa", margin: "2px 0 0" }}>
+                        Total: {item.jumlah} {item.satuan} · {rows.length} kondisi
+                      </p>
                     </div>
-                    <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 700, background: style.bg, color: style.color }}>
-                      {kondisi}
+                    <span style={{
+                      padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: 700,
+                      background: sisa === 0 ? "#f0fdf4" : "#fff1f1",
+                      color: sisa === 0 ? "#22c55e" : "#e53e3e",
+                    }}>
+                      {sisa === 0 ? "✓ Lengkap" : `Sisa ${sisa}`}
                     </span>
                   </div>
-                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                    {kondisiOptions.map(k => {
-                      const s = getKondisiStyle(k);
-                      const isSelected = kondisi === k;
+
+                  {/* Split rows */}
+                  <div style={{ borderTop: "1px solid #f5f5f5" }}>
+                    {rows.map((row, idx) => {
+                      const ks = getKondisiStyle(row.kondisi);
                       return (
-                        <button
-                          key={k}
-                          onClick={() => setKondisiMap(prev => ({ ...prev, [item.barangId]: k }))}
-                          style={{
-                            padding: "6px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
-                            border: `1.5px solid ${isSelected ? s.color : "#e8e8e8"}`,
-                            background: isSelected ? s.bg : "white",
-                            color: isSelected ? s.color : "#888",
-                            cursor: "pointer", transition: "all 0.15s",
-                          }}
-                        >
-                          {k}
-                        </button>
+                        <div key={row.id} style={{ padding: "10px 14px", display: "flex", alignItems: "center",
+                          gap: "10px", borderBottom: idx < rows.length - 1 ? "1px solid #f5f5f5" : "none" }}>
+
+                          {/* Qty control */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <button
+                              onClick={() => updateRow(item.barangId, row.id, { jumlah: row.jumlah - 1 }, item.jumlah)}
+                              style={{ width: "26px", height: "26px", border: "1.5px solid #e8e8e8",
+                                borderRadius: "6px", background: "white", cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <Minus size={12} />
+                            </button>
+                            <input
+                              type="number" min={1} max={item.jumlah} value={row.jumlah}
+                              onChange={e => updateRow(item.barangId, row.id, { jumlah: Number(e.target.value) }, item.jumlah)}
+                              style={{ width: "48px", textAlign: "center", padding: "4px", fontSize: "13px",
+                                fontWeight: 700, border: "1.5px solid #e8e8e8", borderRadius: "6px", outline: "none" }}
+                            />
+                            <button
+                              onClick={() => updateRow(item.barangId, row.id, { jumlah: row.jumlah + 1 }, item.jumlah)}
+                              style={{ width: "26px", height: "26px", border: "1.5px solid #e8e8e8",
+                                borderRadius: "6px", background: "white", cursor: "pointer",
+                                display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <Plus size={12} />
+                            </button>
+                          </div>
+
+                          <span style={{ fontSize: "12px", color: "#aaa", whiteSpace: "nowrap" }}>{item.satuan}</span>
+
+                          {/* Kondisi select */}
+                          <div style={{ flex: 1, display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                            {kondisiOptions.map(k => {
+                              const s = getKondisiStyle(k);
+                              const isSelected = row.kondisi === k;
+                              return (
+                                <button
+                                  key={k}
+                                  onClick={() => updateRow(item.barangId, row.id, { kondisi: k as KondisiType }, item.jumlah)}
+                                  style={{
+                                    padding: "4px 10px", borderRadius: "8px", fontSize: "11px", fontWeight: 600,
+                                    border: `1.5px solid ${isSelected ? s.color : "#e8e8e8"}`,
+                                    background: isSelected ? s.bg : "white",
+                                    color: isSelected ? s.color : "#888",
+                                    cursor: "pointer",
+                                  }}
+                                >{k}</button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Hapus baris */}
+                          {rows.length > 1 && (
+                            <button onClick={() => removeRow(item.barangId, row.id)}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc" }}>
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
+
+                  {/* Tambah baris split */}
+                  <button
+                    onClick={() => addRow(item.barangId)}
+                    style={{ width: "100%", padding: "8px 14px", background: "#f9f9f9",
+                      border: "none", borderTop: "1px solid #f5f5f5", fontSize: "12px",
+                      fontWeight: 600, color: "#4069e5", cursor: "pointer", textAlign: "left" }}>
+                    + Tambah kondisi berbeda
+                  </button>
                 </div>
               );
             })}
@@ -309,16 +415,22 @@ function ModalKembali({ trx, onClose, onConfirm }: {
         </div>
 
         <div style={{ padding: "16px 24px", borderTop: "1px solid #f5f5f5", display: "flex", gap: "10px" }}>
-          <button onClick={onClose} style={{ flex: 1, padding: "11px", background: "#f5f5f5", color: "#444", border: "none", borderRadius: "10px", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "11px", background: "#f5f5f5",
+            color: "#444", border: "none", borderRadius: "10px", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
             Batal
           </button>
           <button
+            disabled={!allValid}
             onClick={() => {
-              onConfirm(Object.entries(kondisiMap).map(([barangId, kondisi]) => ({ barangId, kondisi })));
+              const flatItems = dipinjam.flatMap(item =>
+                splitMap[item.barangId].map(row => ({ barangId: item.barangId, kondisi: row.kondisi, jumlah: row.jumlah }))
+              );
+              onConfirm(flatItems);
               onClose();
             }}
-            style={{ flex: 1, padding: "11px", background: "#2d3748", color: "white", border: "none", borderRadius: "10px", fontSize: "13px", fontWeight: 700, cursor: "pointer" }}
-          >
+            style={{ flex: 1, padding: "11px", background: allValid ? "#2d3748" : "#ccc",
+              color: "white", border: "none", borderRadius: "10px", fontSize: "13px",
+              fontWeight: 700, cursor: allValid ? "pointer" : "not-allowed" }}>
             Konfirmasi Pengembalian
           </button>
         </div>
@@ -381,7 +493,7 @@ function ModalTambah({ onClose, onSave }: { onClose: () => void; onSave: (data: 
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
       <div style={{ background: "white", borderRadius: "20px", width: "100%", maxWidth: "640px", maxHeight: "92vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 64px rgba(0,0,0,0.15)" }}>
         <div style={{ padding: "20px 24px", borderBottom: "1px solid #f5f5f5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a1a1a", margin: 0 }}>Tambah Transaksi Peminjaman</h3>
+          <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a1a1a", margin: 0 }}>Tambah Peminjaman</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#aaa" }}><X size={20} /></button>
         </div>
 
@@ -535,7 +647,7 @@ function ModalTambah({ onClose, onSave }: { onClose: () => void; onSave: (data: 
               disabled={cart.length === 0}
               style={{ flex: 1, padding: "11px", background: cart.length === 0 ? "#ccc" : "#2d3748", color: "white", border: "none", borderRadius: "10px", fontSize: "13px", fontWeight: 700, cursor: cart.length === 0 ? "not-allowed" : "pointer" }}
             >
-              Proses Transaksi
+              Proses Peminjaman
             </button>
           </div>
         </form>
@@ -621,12 +733,15 @@ export default function LoanTrackingPage() {
   const inProgress = transaksi.filter(t => t.status === "In Progress").length;
   const overdue = transaksi.filter(t => t.status === "Overdue").length;
 
-  const handleKembali = (id: string, items: { barangId: string; kondisi: KondisiType }[]) => {
+  const handleKembali = (id: string, items: { barangId: string; kondisi: KondisiType; jumlah: number }[]) => {
     setTransaksi(prev => prev.map(t => {
       if (t.id !== id) return t;
       const updatedItems = t.items.map(item => {
-        const found = items.find(i => i.barangId === item.barangId);
-        return found ? { ...item, status: "Kembali" as const, kondisiKembali: found.kondisi } : item;
+        const rows = items.filter(i => i.barangId === item.barangId);
+        if (rows.length === 0) return item;
+        // kondisi dominan = kondisi dengan jumlah terbesar
+        const dominant = rows.reduce((a, b) => a.jumlah >= b.jumlah ? a : b);
+        return { ...item, status: "Kembali" as const, kondisiKembali: dominant.kondisi };
       });
       const allReturned = updatedItems.every(i => i.status === "Kembali");
       return { ...t, items: updatedItems, status: allReturned ? "Returned" : t.status };
@@ -683,7 +798,7 @@ export default function LoanTrackingPage() {
             onMouseEnter={() => setHoveredBtn("tambah")}
             onMouseLeave={() => setHoveredBtn(null)}
           >
-            <Plus size={14} /> Tambah Transaksi
+            <Plus size={14} /> Tambah Peminjaman
           </button>
         </div>
       </div>
