@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   LayoutDashboard, Package, ClipboardList,
   FileText, Settings, LogOut, Warehouse,
+  Users,
 } from "lucide-react";
 
 const navItems = [
@@ -13,6 +14,7 @@ const navItems = [
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/loan-tracking", label: "Loan Tracking", icon: ClipboardList },
   { href: "/laporan", label: "Laporan", icon: FileText },
+  { href: "/user-management", label: "User Management", icon: Users, adminOnly: true },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -25,6 +27,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [hoveredLogout, setHoveredLogout] = useState(false);
+  const isAdmin = true; 
 
   const content = (
     <div style={{
@@ -54,7 +57,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: "12px 10px", overflowY: "auto" }}>
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {navItems.filter(item => !item.adminOnly || isAdmin).map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href;
           const isHovered = hoveredItem === href;
           return (
