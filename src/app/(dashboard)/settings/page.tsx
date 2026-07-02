@@ -185,7 +185,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div style={{ fontFamily: "var(--font-geist-sans), system-ui, sans-serif", maxWidth: "800px" }}>
+    <div style={{ fontFamily: "var(--font-geist-sans), system-ui, sans-serif", maxWidth: "100%" }}>
 
       {/* Toast */}
       {savedToast && (
